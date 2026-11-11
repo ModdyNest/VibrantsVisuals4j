@@ -1,111 +1,139 @@
 # Vibrants Visuals
 
-Mod Fabric pour **Minecraft Java 26.3** qui reproduit au plus près le mode graphique **Vibrant Visuals** de Minecraft: Bedrock Edition.
+Fabric mod for **Minecraft Java 26.3** that recreates the **Vibrant Visuals** graphics mode of Minecraft: Bedrock Edition as closely as possible.
 
-> Dépendance requise : **Fabric API**.
+> Required dependency: **Fabric API**.
 
-## Fonctionnalités
+## Features
 
-| Effet | Option | Où |
+| Effect | Option | Where |
 |---|---|---|
-| Ombres directionnelles pixelisées (soleil et lune) | Ombres | Vibrants Visuals |
-| Ombres colorées (slime, miel, glace) | incluses dans Ombres | — |
-| Ombres des entités, des blocs spéciaux et du joueur (y compris en 1re personne) | incluses dans Ombres | — |
-| Caustiques sous l'eau | Caustiques | Vibrants Visuals |
-| Brouillard volumétrique | Brouillard volumétrique | Vibrants Visuals |
-| Rayons de lumière | Rayons de lumière | Vibrants Visuals |
+| Pixelated directional shadows (sun and moon) | Shadows | Vibrants Visuals |
+| Colored shadows (slime, honey, ice, stained glass and panes) | part of Shadows | — |
+| Shadows of entities, special blocks and the player (first person included) | part of Shadows | — |
+| Underwater caustics | Caustics | Vibrants Visuals |
+| Volumetric fog | Volumetric Fog | Vibrants Visuals |
+| Light shafts | Light Shafts | Vibrants Visuals |
 | Bloom | Bloom | Vibrants Visuals |
-| Tone mapping ACES | Tone mapping | Vibrants Visuals |
-| Ombres des nuages | Ombres des nuages | Préférences |
+| ACES tone mapping | Tone Mapping | Vibrants Visuals |
+| Cloud shadows | Cloud Shadows | Preferences |
+| Light from held light sources | Held Light | Preferences |
+| Shadows from nearby light sources (lanterns, torches…) | Dynamic Light | Preferences |
+| Colored light, tinted by stained glass | Colored Light | Preferences |
 
-- Le preset graphique **« Vibrants Visuals »** se place entre *Fabuleux* et *Personnalisé*. Il applique les réglages de *Fabuleux*, active tous les effets et passe le rendu sur **Vulkan**. Ce changement demande un redémarrage.
-- Modifier un effet à la main passe le preset sur *Personnalisé*. Les presets *Rapide*, *Détaillé* et *Fabuleux* désactivent tous les effets.
-- Les réglages sont enregistrés dans `config/vibrants-visuals.properties`.
+- The **"Vibrants Visuals"** graphics preset sits between *Fabulous* and *Custom*. It applies the *Fabulous* settings, turns on every effect and switches rendering to **Vulkan**. That switch requires a restart.
+- Changing an effect by hand sets the preset to *Custom*. The *Fast*, *Fancy* and *Fabulous* presets turn every effect off.
+- The Preferences options are never changed by presets. Held Light, Dynamic Light and Colored Light are off by default, for parity with Bedrock.
+- Settings are saved in `config/vibrants-visuals.properties`.
 
-## Comment ça marche
+### Datapack: held light sources
 
-### Vue d'ensemble
+The items that give off light when held are listed in the item tag `vibrants-visuals:held_light_sources`. A datapack can add items with a file at `data/vibrants-visuals/tags/item/held_light_sources.json`:
 
-Le jeu dessine le monde normalement. Le mod ajoute deux étapes :
+```json
+{
+	"replace": false,
+	"values": ["minecraft:magma_block"]
+}
+```
 
-1. **Avant le rendu principal** (`LevelRenderer.addMainPass`), il dessine la scène vue depuis le soleil dans des **cartes d'ombre**.
-2. **Après le rendu du monde, avant la main** (`GameRenderer.renderLevel`), il applique une **passe plein écran**. Elle lit l'image et sa profondeur, recalcule la position de chaque pixel dans le monde, puis applique tous les effets (`shaders/post/vibrant_visuals.fsh`).
+With `"replace": true`, the datapack replaces the whole list. On a server without the mod, the tag is not sent; in that case any light-emitting block item gives off light.
 
-Tout passe par l'API de rendu du jeu (`com.mojang.renderpearl`), donc le mod fonctionne aussi bien sur OpenGL que sur Vulkan.
+## How it works
 
-> Particularité de cette version : la profondeur est **inversée**. Elle est effacée à 0, et un objet proche a une valeur plus grande. Toutes les matrices et comparaisons du mod en tiennent compte.
+### Overview
 
-### Ombres
+The game draws the world as usual. The mod adds the following steps:
 
-**Carte d'ombre** (`render/ShadowRenderer.java`)
-- C'est une texture de profondeur de 4096×4096 qui couvre 96 blocs autour du joueur. Elle est vue depuis le soleil avec une projection orthographique.
-- **Terrain** : le mod réutilise les morceaux de terrain que le jeu a déjà préparés pour l'image (`ChunkSectionsToRender.renderLayers`). Il les dessine avec ses propres pipelines, qui n'écrivent que la profondeur et ne masquent aucune face.
-- **Entités et blocs spéciaux** (coffres, têtes, golems…) : le mod réexécute les modèles opaques et translucides préparés par le jeu. Il utilise pour ça `FeatureRenderDispatcher.PreparedFrame` avec la projection du soleil.
-- **Modèles translucides** : ils n'écrivent normalement pas la profondeur, ce qui est le cas de la peau du joueur. Ils sont remplacés à la volée par un pipeline qui l'écrit.
+1. **Before the main pass** (`LevelRenderer.addMainPass`), it draws the scene as seen from the sun into **shadow maps**. It also draws the opaque terrain from the camera to store exact surface normals.
+2. **After the world is drawn, before the hand** (`GameRenderer.renderLevel`), it runs a **full-screen pass**. This pass reads the image and its depth, rebuilds each pixel's world position, then applies every effect (`shaders/post/vibrant_visuals.fsh`).
 
-**Ombre du joueur en 1re personne** (`render/FirstPersonShadow.java`)
-- Dans cette vue, le jeu ne prépare pas le modèle du joueur. Le mod le prépare lui-même dans une liste à part, que seule la passe d'ombre dessine.
+Everything goes through the game's rendering API (`com.mojang.renderpearl`), so the mod works on both OpenGL and Vulkan.
 
-**Effet pixelisé à la Bedrock**
-- Avant le test d'ombre, la position de chaque pixel est arrondie à la grille **1/16 de bloc** de la face. Les bords d'ombre suivent ainsi les pixels des textures.
-- L'origine de la carte d'ombre est calée sur sa propre grille. La direction du soleil avance par **paliers de 0,5°**. Ces deux réglages empêchent les ombres de scintiller ou de « dériver ».
-- Comme sur Bedrock, l'angle du soleil ne descend pas sous **10°**.
+> In this version, depth is **reversed**: it is cleared to 0, and closer objects have greater values. All of the mod's matrices and comparisons account for this.
 
-**Éviter l'auto-ombrage (« shadow acne »)**
-- Plusieurs décalages se combinent :
-  - un décalage le long de la normale, qui grandit quand la lumière est rasante ;
-  - un biais de profondeur calculé dans le shader ;
-  - un biais matériel dans les pipelines d'ombre.
-- La normale est recalculée à partir de la profondeur, en prenant toujours le voisin situé sur la même surface. Ça évite les liserés sombres au bord des feuilles.
-- Sur les faces de blocs, la normale est arrondie à l'axe le plus proche.
-- Les zones à l'ombre sont assombries et légèrement **bleutées**, car seul le ciel les éclaire, comme sur Bedrock.
+### Shadows
 
-**Ombres colorées**
-- Une seconde carte, en couleur et en 2048×2048, reçoit les blocs translucides choisis : slime, miel, glace et eau.
-- Le shader reconnaît ces blocs grâce à la position de leur texture dans l'atlas.
-- Seule la surface la plus proche du soleil est gardée, donc le cube intérieur du slime n'assombrit pas l'ombre une seconde fois.
-- L'eau ne teinte pas la lumière : elle sert seulement à marquer les zones immergées pour les caustiques.
+**Shadow map** (`render/ShadowRenderer.java`)
+- A 4096×4096 depth texture covering 96 blocks around the player. It is seen from the sun with an orthographic projection.
+- **Terrain**: the mod reuses the terrain draws the game has already prepared for the frame (`ChunkSectionsToRender.renderLayers`). It draws them with its own pipelines, which only write depth and cull no faces.
+- **Entities and block entities** (chests, heads, golems…): the mod replays the opaque and translucent models prepared by the game, through `FeatureRenderDispatcher.PreparedFrame`, with the sun's projection.
+- **Translucent models**: they normally don't write depth, and the player's skin is one of them. They are swapped on the fly for a pipeline that does write depth.
 
-**Ombres des nuages**
-- Le shader lance un rayon vers le soleil jusqu'à l'altitude des nuages, puis lit la texture vanilla `clouds.png`.
-- Il reprend exactement le défilement du jeu : 12 blocs par pixel de texture et 0,03 bloc par tick.
+**First-person player shadow** (`render/FirstPersonShadow.java`)
+- In this view, the game doesn't prepare the player model. The mod prepares it in a separate list that only the shadow pass draws.
 
-### Caustiques
-- Elles ne s'affichent que sur les surfaces **sous l'eau** et **éclairées** par le soleil, ce qui inclut le sable derrière une cascade.
-- Le motif est projeté depuis la surface de l'eau dans la direction de la lumière. Il s'atténue avec la profondeur, comme la lumière, qui bleuit au passage.
-- La texture `caustics.png` de Bedrock n'étant pas libre de droits, le motif est **généré dans le shader**. Deux couches de tailles différentes sont superposées pour cacher la répétition.
+**Bedrock-style pixelated look**
+- Before the shadow test, each pixel's position is snapped to the face's **1/16 block grid**, so shadow edges follow the texture pixels.
+- The shadow map origin is snapped to its own texel grid, and the sun direction moves in **0.5° steps**. Together, these stop shadows from shimmering or drifting.
+- As on Bedrock, the sun elevation never goes below **10°**.
 
-### Brouillard volumétrique, rayons de lumière, bloom, tone mapping
-- **Brouillard** : sa densité dépend de l'altitude et augmente avec la pluie. Il est plus lumineux face au soleil, ce qu'on appelle la diffusion de Mie.
-- **Rayons de lumière** : un flou radial part de la position du soleil à l'écran et ne garde que les pixels de ciel.
-- **Bloom** : les zones très lumineuses débordent légèrement sur leurs voisines.
-- **Tone mapping** : la courbe ACES (Narkowicz) donne le rendu « filmique » de Bedrock.
-- Les lignes de debug, comme les bordures de chunks, n'écrivent plus la profondeur quand le brouillard est activé. Sinon il les prendrait pour des murs.
+**Avoiding shadow acne**
+- Several offsets are combined:
+  - an offset along the normal, which grows at grazing light angles;
+  - a depth bias computed in the shader;
+  - a hardware bias in the shadow pipelines.
+- **Exact normals** (`render/NormalRenderer.java`): the opaque terrain is drawn a second time from the camera, and each face writes its real orientation. Where it is unavailable (entities, for example), the normal is rebuilt from depth, always using the neighbor that lies on the same surface.
+- Shaded areas are darkened and slightly **blue**, since only the sky lights them, as on Bedrock.
+
+**Colored shadows**
+- A second color map, 2048×2048, receives selected translucent blocks: slime, honey, ice, stained glass and panes, and water.
+- The shader recognizes these blocks by the position of their texture in the atlas.
+- Only the surface closest to the sun is kept, so the slime's inner cube doesn't darken the shadow a second time.
+- Water doesn't tint the light: it only marks underwater areas for caustics.
+
+**Cloud shadows**
+- The shader casts a ray toward the sun up to cloud height, then reads the vanilla `clouds.png` texture.
+- It uses the exact same scrolling as the game: 12 blocks per texture pixel and 0.03 blocks per tick. It follows the sun smoothly, without the 0.5° steps.
+
+### Caustics
+- They only appear on surfaces that are **underwater** and **lit** by the sun, which includes sand behind a waterfall.
+- The pattern is projected from the water surface along the light direction. It fades with depth, like the light, which also turns bluer.
+- Bedrock's `caustics.png` is not freely licensed, so the pattern is **generated in the shader**. Two layers of different sizes are blended to hide the repetition.
+
+### Lights (`render/DynamicLights.java`, `render/ColoredLightVolume.java`)
+- **Held Light**: entities holding a light source within 32 blocks become a point light that adds light to their surroundings. The vanilla lightmap doesn't know about this light.
+- **Dynamic Light**: light-emitting blocks within 12 blocks (up to 8 lights) cast shadows. They are computed in screen space: the shader marches from each surface toward the light through the depth buffer. The march stops before the light's own block, so it doesn't shadow itself. In first person, the player's body is approximated by a capsule.
+- **Colored Light**: within a 32-block cube around the camera, colored light spreads like vanilla light, with one level per red, green and blue channel. Stained glass multiplies the light that passes through it. The result is stored in a texture and blended smoothly in the shader. Light colors are guessed from block names (redstone → red, soul → blue, copper → green…), so modded blocks follow the same rules.
+
+### Volumetric fog, light shafts, bloom, tone mapping
+- **Fog**: its density depends on altitude and increases with rain. It is brighter when facing the sun (Mie scattering).
+- **Light shafts**: a radial blur starting from the sun's position on screen, keeping only sky pixels.
+- **Bloom**: very bright areas spill slightly onto their neighbors.
+- **Tone mapping**: the ACES curve (Narkowicz) gives Bedrock's "filmic" look.
+- Debug lines, such as chunk borders, no longer write depth when fog is on. Otherwise the fog would treat them as walls.
 
 ## Structure
 
 ```
 src/client/java/com/lucachinou/client/
-├── VibrantsVisualsOptions.java        options et sauvegarde
+├── VibrantsVisualsOptions.java        options and saving
 ├── render/
-│   ├── VibrantsVisualsRenderer.java   passe plein écran et paramètres envoyés au shader
-│   ├── ShadowRenderer.java            cartes d'ombre (terrain, entités, ombres colorées)
-│   └── FirstPersonShadow.java         ombre du joueur en 1re personne
-└── mixin/                             points d'accroche dans le jeu
+│   ├── VibrantsVisualsRenderer.java   full-screen pass and shader parameters
+│   ├── ShadowRenderer.java            shadow maps (terrain, entities, colored shadows)
+│   ├── NormalRenderer.java            exact terrain normals
+│   ├── FirstPersonShadow.java         first-person player shadow
+│   ├── DynamicLights.java             held and nearby point lights
+│   └── ColoredLightVolume.java        colored light propagation
+└── mixin/                             hooks into the game
 src/client/resources/assets/vibrants-visuals/shaders/
-├── core/shadow.fsh                    rendu des cartes d'ombre
-└── post/vibrant_visuals.fsh           tous les effets
+├── core/shadow.fsh                    shadow map rendering
+├── core/normals.vsh, normals.fsh      normal pass
+└── post/vibrant_visuals.fsh           every effect
+src/main/resources/data/vibrants-visuals/tags/item/
+└── held_light_sources.json            held light sources (datapack-editable)
 ```
 
-## Limites connues
-- Pas de textures PBR (relief, reflets, matériaux).
-- Pas de reflets sur l'eau ni d'effet de fenêtre de Snell.
-- Seul ce qui est chargé autour de la caméra projette une ombre, dans un rayon de 96 blocs.
-- L'ombre des nuages est plate : elle ne reproduit pas le volume des nuages « Détaillés ».
+## Known limitations
+- No PBR textures (relief, reflections, materials).
+- No water reflections or Snell's window.
+- Only what is loaded around the camera casts sun shadows, within 96 blocks.
+- Cloud shadows are flat: they don't reproduce the volume of "Fancy" clouds.
+- Dynamic light shadows only see what is on screen. Colored light only reaches 16 blocks around the player.
 
-## Compiler
+## Building
 
 ```bash
-./gradlew build       # le .jar est dans build/libs/
-./gradlew runClient   # lance le jeu de test
+./gradlew build       # the .jar is in build/libs/
+./gradlew runClient   # launches the test game
 ```
