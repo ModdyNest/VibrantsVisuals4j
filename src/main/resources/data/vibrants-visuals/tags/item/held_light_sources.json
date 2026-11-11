@@ -1,0 +1,21 @@
+{
+	"replace": false,
+	"values": [
+		"minecraft:torch",
+		"minecraft:soul_torch",
+		{ "id": "minecraft:copper_torch", "required": false },
+		"minecraft:redstone_torch",
+		"minecraft:lantern",
+		"minecraft:soul_lantern",
+		"#minecraft:lanterns",
+		"minecraft:glowstone",
+		"minecraft:sea_lantern",
+		"minecraft:shroomlight",
+		"minecraft:jack_o_lantern",
+		"minecraft:end_rod",
+		"minecraft:lava_bucket",
+		"minecraft:glow_berries",
+		"minecraft:campfire",
+		"minecraft:soul_campfire"
+	]
+}

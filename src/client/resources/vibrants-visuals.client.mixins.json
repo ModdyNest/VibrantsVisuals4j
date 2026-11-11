@@ -1,0 +1,26 @@
+{
+	"required": true,
+	"package": "com.lucachinou.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ChunkSectionsToRenderInvoker",
+		"EntityRendererMixin",
+		"PreparedFrameAccessor",
+		"PreparedFrameMixin",
+		"PreparedRenderTypeMixin",
+		"GameRendererMixin",
+		"GizmoFeatureRendererMixin",
+		"LevelRendererMixin",
+		"GraphicsPresetAccessor",
+		"GraphicsPresetMixin",
+		"OptionsMixin",
+		"OptionsSaveMixin",
+		"VideoSettingsScreenMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

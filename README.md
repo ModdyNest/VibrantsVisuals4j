@@ -2,7 +2,7 @@
 
 Fabric mod for **Minecraft Java 26.3** that recreates the **Vibrant Visuals** graphics mode of Minecraft: Bedrock Edition as closely as possible.
 
-> Required dependency: **Fabric API**.
+> No dependency required.
 
 ## Features
 

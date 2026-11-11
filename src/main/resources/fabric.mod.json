@@ -1,0 +1,37 @@
+{
+	"schemaVersion": 1,
+	"id": "vibrants-visuals",
+	"version": "${version}",
+	"name": "Vibrants Visuals",
+	"description": "This mod is a proof of concept about Vibrants Visuals on Minecraft: Java Edition",
+	"authors": [
+		"lucachinou"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/vibrants-visuals/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.lucachinou.VibrantsVisuals"
+		],
+		"client": [
+			"com.lucachinou.client.VibrantsVisualsClient"
+		]
+	},
+	"mixins": [
+		"vibrants-visuals.mixins.json",
+		{
+			"config": "vibrants-visuals.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25"
+	}
+}
