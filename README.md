@@ -66,7 +66,7 @@ Everything goes through the game's rendering API (`com.mojang.renderpearl`), so 
 **Bedrock-style pixelated look**
 - Before the shadow test, each pixel's position is snapped to the face's **1/16 block grid**, so shadow edges follow the texture pixels.
 - The shadow map origin is snapped to its own texel grid, and the sun direction moves in **0.5° steps**. Together, these stop shadows from shimmering or drifting.
-- As on Bedrock, the sun elevation never goes below **10°**.
+- The shadow projection clamps light elevation to **10°** for stability; this is a mod-specific choice, not a documented Bedrock default.
 
 **Avoiding shadow acne**
 - Several offsets are combined:
@@ -97,10 +97,10 @@ Everything goes through the game's rendering API (`com.mojang.renderpearl`), so 
 - **Colored Light**: within a 32-block cube around the camera, colored light spreads like vanilla light, with one level per red, green and blue channel. Stained glass multiplies the light that passes through it. The result is stored in a texture and blended smoothly in the shader. Light colors are guessed from block names (redstone → red, soul → blue, copper → green…), so modded blocks follow the same rules.
 
 ### Volumetric fog, light shafts, bloom, tone mapping
-- **Fog**: its density depends on altitude and increases with rain. It is brighter when facing the sun (Mie scattering).
+- **Fog**: its density depends on altitude and increases with rain. Scattering uses the Henyey–Greenstein phase function with the documented air default, **g = 0.75**. Its conversion into an LDR color blend remains an approximation.
 - **Light shafts**: a radial blur starting from the sun's position on screen, keeping only sky pixels.
 - **Bloom**: very bright areas spill slightly onto their neighbors.
-- **Tone mapping**: the ACES curve (Narkowicz) gives Bedrock's "filmic" look.
+- **Tone mapping**: a Narkowicz ACES approximation gives a filmic look. Bedrock supports several operators, including its own Generic curve; the documentation does not establish this approximation as its default.
 - Debug lines, such as chunk borders, no longer write depth when fog is on. Otherwise the fog would treat them as walls.
 
 ## Structure

@@ -50,14 +50,22 @@ public final class DynamicLights {
 		return glass;
 	}
 
-	/** Light color guessed from the block or item name, the same rules apply to modded content. */
+	/** Documented Bedrock point-light colors; unlisted sources retain the mod's artistic fallback. */
 	static Vector3f colorOf(final String name) {
-		if (name.contains("redstone")) {
-			return new Vector3f(1.0F, 0.22F, 0.12F);
-		} else if (name.contains("soul")) {
-			return new Vector3f(0.35F, 0.78F, 1.0F);
+		// MicrosoftDocs/minecraft-creator: VibrantVisuals/LightingCustomization.md.
+		// Test specific variants before generic torch / lantern names (includes wall and waxed variants).
+		if (name.contains("redstone_torch") || name.contains("redstone_wall_torch")) {
+			return rgb(0xFF0000);
+		} else if (name.contains("soul_torch") || name.contains("soul_wall_torch") || name.contains("soul_lantern")) {
+			return rgb(0x00FFFF);
 		} else if (name.contains("copper_torch") || name.contains("copper_lantern")) {
-			return new Vector3f(0.55F, 1.0F, 0.55F);
+			return rgb(0xB8EF8D);
+		} else if (name.equals("torch") || name.equals("wall_torch") || name.contains("candle")) {
+			return rgb(0xEFE39D);
+		} else if (name.equals("lantern")) {
+			return rgb(0xCE8133);
+		} else if (name.equals("end_rod") || name.equals("sea_pickle")) {
+			return rgb(0xFFFFFF);
 		} else if (name.contains("amethyst") || name.contains("crying_obsidian") || name.contains("end_portal")) {
 			return new Vector3f(0.75F, 0.4F, 1.0F);
 		} else if (name.contains("sea_lantern") || name.contains("beacon") || name.contains("end_rod") || name.contains("sea_pickle") || name.contains("conduit")) {
@@ -66,6 +74,10 @@ public final class DynamicLights {
 			return new Vector3f(1.0F, 0.5F, 0.15F);
 		}
 		return WARM;
+	}
+
+	private static Vector3f rgb(final int color) {
+		return new Vector3f(((color >> 16) & 255) / 255.0F, ((color >> 8) & 255) / 255.0F, (color & 255) / 255.0F);
 	}
 
 

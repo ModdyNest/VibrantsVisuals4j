@@ -51,7 +51,9 @@ float luminance(vec3 c) {
 // Bedrock's Vibrant Visuals shadows are aligned on the 16x16 texel grid of each block face
 const float PIXELS_PER_BLOCK = 16.0;
 
-// Bedrock water defaults: caustics scale 0.5 and power 1. One tile spans 4 blocks, which divides the 256 block wrap.
+// Artistic procedural approximation, not a conversion of Bedrock's texture scale/power.
+// WaterCustomization.md documents their meaning, but not universal default values.
+// Both layer tile sizes divide the 256-block camera wrap.
 const float CAUSTICS_TILE = 4.0;
 const float TAU = 6.28318530718;
 
@@ -162,6 +164,14 @@ vec3 sceneLight() {
     vec3 sun = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.94, 0.82), clamp(LightDir.y * 4.0, 0.0, 1.0));
     vec3 moon = vec3(0.55, 0.65, 1.0);
     return mix(moon, sun, day) * LightDir.w;
+}
+
+// FogInResourcePacks.md: default Henyey-Greenstein g for air is 0.75 (water: 0.6).
+// This post pass currently applies volumetric fog only in air.
+const float AIR_SCATTERING_G = 0.75;
+float henyeyGreenstein(float cosTheta, float g) {
+    float denominator = max(1.0 + g * g - 2.0 * g * clamp(cosTheta, -1.0, 1.0), 1.0e-4);
+    return (1.0 - g * g) / (12.56637061436 * denominator * sqrt(denominator));
 }
 
 vec3 bloom(vec2 uv) {
@@ -373,7 +383,10 @@ void main() {
         float opticalDepth = density * dist * clamp(heightTerm, 0.0, 4.0);
         float transmittance = exp(-opticalDepth);
         float cosTheta = dot(viewDir, normalize(LightDir.xyz));
-        float phase = 0.4 + 0.6 * pow(max(cosTheta, 0.0), 6.0);
+        // Use the documented phase function instead of a guessed forward-scattering exponent.
+        // Compress to a blend weight: our LDR fog-color blend is not Bedrock's HDR volume integration.
+        float scattering = henyeyGreenstein(cosTheta, AIR_SCATTERING_G);
+        float phase = scattering / (scattering + 1.0 / 12.56637061436);
         vec3 fogColor = mix(FogTint.rgb, FogTint.rgb * 0.6 + light * 0.4, phase);
         if (!isSky) {
             color = mix(fogColor, color, transmittance);
