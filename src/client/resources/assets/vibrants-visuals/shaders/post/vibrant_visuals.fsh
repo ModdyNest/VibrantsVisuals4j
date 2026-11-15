@@ -358,7 +358,10 @@ void main() {
     // Directional shadows: occlusion from the shadow map plus faces turned away from the light
     if (ShadowInfo.x == 1 && !isSky) {
         float nDotL = dot(normal, normalize(LightDir.xyz));
-        vec3 lit = nDotL <= 0.0 ? vec3(0.0) : shadowFactor(pos, normal, nDotL, axisAligned);
+        // Faces almost parallel to the light (walls, grass and player sides at noon) fade out smoothly:
+        // a hard cut at nDotL = 0 made them flicker between lit and shaded as the normal sign wobbled
+        float terminator = smoothstep(0.0, 0.12, nDotL);
+        vec3 lit = terminator <= 0.0 ? vec3(0.0) : shadowFactor(pos, normal, max(nDotL, 0.05), axisAligned) * terminator;
         // Bedrock's shaded areas are lit by the sky only, so they turn darker and slightly blue instead of plain grey
         vec3 shadowColor = color * mix(vec3(1.0), vec3(0.50, 0.56, 0.70), LightDir.w);
         color = mix(shadowColor, color, lit);

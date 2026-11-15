@@ -316,7 +316,9 @@ public final class ShadowRenderer {
 	}
 
 	private static void computeShadowMatrix(final Vec3 cameraPos, final Vector3f lightDir, final Matrix4f dest) {
-		Matrix4f rotation = new Matrix4f().lookAlong(new Vector3f(lightDir).negate(), Math.abs(lightDir.y) > 0.99F ? new Vector3f(0, 0, 1) : new Vector3f(0, 1, 0));
+		// The sun moves in the X/Y plane, so +Z is always perpendicular to it: a fixed up vector avoids the
+		// shadow map suddenly rotating (and every shadow edge jumping) when the sun passes near noon
+		Matrix4f rotation = new Matrix4f().lookAlong(new Vector3f(lightDir).negate(), new Vector3f(0, 0, 1));
 
 		// Snap the shadow map origin to its texel grid in light space so shadows do not shimmer when moving
 		Vector3d lightSpaceCamera = new Vector3d(cameraPos.x, cameraPos.y, cameraPos.z);
