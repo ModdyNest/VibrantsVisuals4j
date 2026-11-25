@@ -17,8 +17,8 @@ layout(location = 3) in vec2 texCoord0;
 layout(location = 4) in float chunkVisibility;
 
 #ifdef TRANSLUCENT_CASTERS
-// Must match ShadowRenderer.CASTER_TEXTURES: 2 water sprites, slime, honey (x3), ice, 16 stained glass + 16 pane edges
-const int CASTER_COUNT = 39;
+// Must match ShadowRenderer.CASTER_TEXTURES: 2 water sprites, slime, honey (x3), ice, brittle ice (x4), 16 stained glass + 16 pane edges
+const int CASTER_COUNT = 43;
 const int WATER_CASTERS = 2;
 
 layout(std140) uniform VibrantsShadowCasters {

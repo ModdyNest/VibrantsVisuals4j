@@ -41,6 +41,7 @@ import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.SkyRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.data.AtlasIds;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4d;
@@ -95,7 +96,8 @@ public final class ShadowRenderer {
 	/** Water first (it only marks caustics), then the blocks that tint the light. Order must match core/shadow.fsh. */
 	private static Identifier[] casterTextures() {
 		java.util.List<String> names = new java.util.ArrayList<>(java.util.List.of(
-			"water_still", "water_flow", "slime_block", "honey_block_top", "honey_block_side", "honey_block_bottom", "ice"
+			"water_still", "water_flow", "slime_block", "honey_block_top", "honey_block_side", "honey_block_bottom", "ice",
+			"brittle_ice_0", "brittle_ice_1", "brittle_ice_2", "brittle_ice_3"
 		));
 		for (String color : new String[]{
 			"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
@@ -288,7 +290,7 @@ public final class ShadowRenderer {
 			castersBuffer = RenderSystem.getDevice().createBuffer(() -> "Vibrants Visuals shadow casters", 136, CASTERS_UBO_SIZE);
 		}
 
-		TextureAtlas atlas = (TextureAtlas) minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS);
+		TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			Std140Builder builder = Std140Builder.onStack(stack, CASTERS_UBO_SIZE);
 			for (Identifier texture : CASTER_TEXTURES) {
