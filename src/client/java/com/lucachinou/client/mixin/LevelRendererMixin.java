@@ -44,8 +44,13 @@ public abstract class LevelRendererMixin {
 		final CallbackInfo ci
 	) {
 		ShadowRenderer.render(chunkSectionsToRender, featureFrame, terrainFog);
-		if (com.lucachinou.client.VibrantsVisualsOptions.anyEnabled()) {
+		// Normals are only read by the shadow and point light code, the other effects don't need this extra terrain pass
+		if (com.lucachinou.client.VibrantsVisualsOptions.SHADOWS.get() || com.lucachinou.client.VibrantsVisualsOptions.HELD_LIGHT.get()
+			|| com.lucachinou.client.VibrantsVisualsOptions.DYNAMIC_LIGHT.get() || com.lucachinou.client.VibrantsVisualsOptions.COLORED_LIGHT.get()) {
 			com.lucachinou.client.render.NormalRenderer.render(chunkSectionsToRender, terrainFog);
+		} else {
+			// Otherwise the shader kept reading normals left over from an earlier frame
+			com.lucachinou.client.render.NormalRenderer.deactivate();
 		}
 	}
 }

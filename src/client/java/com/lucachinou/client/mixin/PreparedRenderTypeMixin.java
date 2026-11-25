@@ -1,7 +1,7 @@
 package com.lucachinou.client.mixin;
 
 import com.lucachinou.client.render.ShadowRenderer;
-import com.mojang.renderpearl.api.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.renderer.rendertype.PreparedRenderType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;

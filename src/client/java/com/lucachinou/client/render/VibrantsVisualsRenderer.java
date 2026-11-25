@@ -14,13 +14,15 @@ import com.mojang.renderpearl.api.commands.RenderPass;
 import com.mojang.renderpearl.api.pipeline.BindGroupLayout;
 import com.mojang.renderpearl.api.pipeline.ColorTargetState;
 import com.mojang.renderpearl.api.pipeline.CompiledRenderPipeline;
-import com.mojang.renderpearl.api.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.renderpearl.api.pipeline.UniformType;
 import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.renderpearl.api.textures.GpuTextureView;
 import java.util.Optional;
 import net.minecraft.client.renderer.MappableRingBuffer;
-import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.pipeline.RenderPipelines;
+import net.minecraft.client.renderer.RenderPassLayouts;
+import com.mojang.renderpearl.api.pipeline.PrimitiveTopology;
 import net.minecraft.client.renderer.state.GameRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.SkyRenderState;
@@ -38,9 +40,10 @@ import org.joml.Vector4f;
 import org.jspecify.annotations.Nullable;
 
 public final class VibrantsVisualsRenderer {
-	private static final RenderPipeline PIPELINE = RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+	private static final RenderPipeline PIPELINE = RenderPipeline.builder(RenderPipelines.GLOBALS_SNIPPET)
 		.withLocation(VibrantsVisuals.id("pipeline/vibrant_visuals"))
-		.withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+		.withVertexShader(Identifier.withDefaultNamespace("core/screentriangle"))
+		.withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
 		.withFragmentShader(VibrantsVisuals.id("post/vibrant_visuals"))
 		.withBindGroupLayout(
 			BindGroupLayout.builder()
@@ -85,13 +88,14 @@ public final class VibrantsVisualsRenderer {
 	}
 
 	public static void render(final GameRenderState state, final RenderTarget mainTarget) {
-		if (failed || !VibrantsVisualsOptions.anyEnabled() || mainTarget.getColorTexture() == null || mainTarget.getDepthTextureView() == null) {
+		// Debug 2: skip the post pass entirely, to tell shader bugs apart from the other hooks
+		if (failed || Integer.getInteger("vibrants.debug", 0) == 2 || !VibrantsVisualsOptions.anyEnabled() || mainTarget.getColorTexture() == null || mainTarget.getDepthTextureView() == null) {
 			return;
 		}
 
 		CompiledRenderPipeline pipeline;
 		try {
-			pipeline = RenderSystem.getCompiledPipelineNullable(PIPELINE);
+			pipeline = RenderSystem.getCompiledPipelineNullable(PIPELINE, RenderPassLayouts.COLOR_ONLY.subpass(0));
 		} catch (RuntimeException e) {
 			pipeline = null;
 		}
@@ -117,12 +121,12 @@ public final class VibrantsVisualsRenderer {
 		writeConfig(state, configBuffer);
 
 		// Loading a texture uploads it, which is not allowed once the render pass is open
-		GpuTextureView cloudTexture = Minecraft.getInstance().getTextureManager().getTexture(CLOUDS_TEXTURE).getTextureView();
-		net.minecraft.client.renderer.texture.DynamicTexture coloredLight = VibrantsVisualsOptions.COLORED_LIGHT.get() ? ColoredLightVolume.texture() : null;
+		GpuTextureView cloudTexture = Minecraft.getInstance().getTextureManager().getTexture(CLOUDS_TEXTURE).textureView();
+		GpuTextureView coloredLight = VibrantsVisualsOptions.COLORED_LIGHT.get() ? ColoredLightVolume.texture() : null;
 		CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
 		encoder.copyTextureToTexture(mainTarget.getColorTexture(), sceneCopy.getColorTexture(), 0, 0, 0, 0, 0, width, height);
 
-		try (RenderPass pass = encoder.createRenderPass(() -> "Vibrants Visuals", mainTarget.getColorTextureView(), Optional.empty())) {
+		try (RenderPass pass = encoder.createRenderPass(() -> "Vibrants Visuals", RenderPassLayouts.COLOR_ONLY, mainTarget.getColorTextureView(), Optional.empty())) {
 			pass.setPipeline(pipeline);
 			RenderSystem.bindDefaultUniforms(pass);
 			pass.setUniform("InSampler", sceneCopy.getColorTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR));
@@ -141,7 +145,9 @@ public final class VibrantsVisualsRenderer {
 			);
 			pass.setUniform(
 				"TintDepthSampler",
-				tint != null ? tint.getDepthTextureView() : mainTarget.getDepthTextureView(),
+				// Fallback to the shadow depth itself: the shader then never finds a tinted occluder (the camera depth
+				// produced view-dependent colored patches)
+				tint != null ? tint.getDepthTextureView() : shadowView != null ? shadowView : mainTarget.getDepthTextureView(),
 				RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST)
 			);
 			pass.setUniform(
@@ -153,7 +159,7 @@ public final class VibrantsVisualsRenderer {
 			boolean normalsReady = NormalRenderer.isActive() && normals != null && normals.width == width && normals.height == height;
 			pass.setUniform("NormalSampler", normalsReady ? normals.getColorTextureView() : sceneCopy.getColorTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
 			pass.setUniform("NormalDepthSampler", normalsReady ? normals.getDepthTextureView() : mainTarget.getDepthTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
-			pass.setUniform("ColorLightSampler", coloredLight != null ? coloredLight.getTextureView() : sceneCopy.getColorTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
+			pass.setUniform("ColorLightSampler", coloredLight != null ? coloredLight : sceneCopy.getColorTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
 			pass.setUniform("VibrantsConfig", configBuffer.currentBuffer());
 			pass.draw(3, 1, 0, 0);
 		}
@@ -183,7 +189,7 @@ public final class VibrantsVisualsRenderer {
 			return new Vector4f(0.0F, 0.0F, 0.0F, 0.0F);
 		}
 
-		GpuTextureView clouds = minecraft.getTextureManager().getTexture(CLOUDS_TEXTURE).getTextureView();
+		GpuTextureView clouds = minecraft.getTextureManager().getTexture(CLOUDS_TEXTURE).textureView();
 		double periodX = clouds.getWidth(0) * 12.0;
 		double periodZ = clouds.getHeight(0) * 12.0;
 		Vec3 cameraPos = state.levelRenderState.cameraRenderState.pos;
@@ -236,7 +242,7 @@ public final class VibrantsVisualsRenderer {
 			builder
 				.putMat4f(invViewProj)
 				.putMat4f(ShadowRenderer.shadowMatrix())
-				.putIVec4(ShadowRenderer.isActive() ? 1 : 0, 0, 0, 0)
+				.putIVec4(ShadowRenderer.isActive() ? 1 : 0, Integer.getInteger("vibrants.debug", 0), 0, 0)
 				.putVec4(ShadowRenderer.RADIUS, 2.0F * ShadowRenderer.RADIUS / ShadowRenderer.RESOLUTION, 2.0F * ShadowRenderer.DEPTH_RANGE, 0.0F)
 				.putVec4(lightDir.x, lightDir.y, lightDir.z, lightStrength)
 				.putVec4(lightU, lightV, lightOnScreen, isDay ? 1.0F : 0.0F)

@@ -292,7 +292,9 @@ vec3 coloredLight(vec3 color, vec3 pos, vec3 normal) {
         light += colorLightCell(base + o) * (w.x * w.y * w.z);
     }
     float level = max(light.r, max(light.g, light.b));
-    if (level < 0.02) {
+    // Texels hold the level in 1/16 steps: 240 / 255 is full brightness
+    level *= 255.0 / 240.0;
+    if (level < 0.05) {
         return color;
     }
     // The lightmap already holds a warm torch color, so only the hue relative to it is applied
@@ -356,7 +358,7 @@ void main() {
     vec3 normal = isSky ? vec3(0.0, 1.0, 0.0) : surfaceNormal(pos, viewDir, axisAligned);
 
     // Directional shadows: occlusion from the shadow map plus faces turned away from the light
-    if (ShadowInfo.x == 1 && !isSky) {
+    if (ShadowInfo.x == 1 && !isSky && ShadowInfo.y != 8) {
         float nDotL = dot(normal, normalize(LightDir.xyz));
         // Faces almost parallel to the light (walls, grass and player sides at noon) fade out smoothly:
         // a hard cut at nDotL = 0 made them flicker between lit and shaded as the normal sign wobbled
@@ -367,15 +369,15 @@ void main() {
         color = mix(shadowColor, color, lit);
     }
 
-    if (PointLightInfo.x > 0.5 && !isSky) {
+    if (PointLightInfo.x > 0.5 && !isSky && ShadowInfo.y != 8) {
         color = pointLights(color, pos, normal);
     }
-    if (ColoredVolume.w > 0.5 && !isSky) {
+    if (ColoredVolume.w > 0.5 && !isSky && ShadowInfo.y != 8) {
         color = coloredLight(color, pos, normal);
     }
 
     // Bedrock-like volumetric fog: height-based density, scattering towards the light source
-    if (Toggles.x == 1) {
+    if (Toggles.x == 1 && ShadowInfo.y != 7) {
         float density = mix(0.0016, 0.006, Params.y);
         float heightFalloff = 0.045;
         float camHeight = Params.x - 62.0;
@@ -399,7 +401,7 @@ void main() {
     }
 
     // Light shafts (god rays): radial occlusion march towards the sun/moon in screen space
-    if (Toggles.y == 1 && LightScreen.z > 0.5) {
+    if (Toggles.y == 1 && LightScreen.z > 0.5 && ShadowInfo.y != 7) {
         vec2 lightUv = LightScreen.xy;
         vec2 delta = (lightUv - texCoord) / float(SHAFT_SAMPLES);
         vec2 uv = texCoord + delta * hash(texCoord * ScreenSize + GameTime * 1000.0);
@@ -419,7 +421,7 @@ void main() {
         color += light * lit * pow(facing, 3.0) * edge * 0.55;
     }
 
-    if (Toggles.z == 1) {
+    if (Toggles.z == 1 && ShadowInfo.y != 7) {
         color += bloom(texCoord) * 0.8;
     }
 
@@ -429,5 +431,26 @@ void main() {
         color = max(mix(vec3(l), color, 1.12), 0.0);
     }
 
-    fragColor = vec4(color, 1.0);
+    // Keep the scene alpha like vanilla: forcing 1 changes how later passes blend over translucent objects
+    fragColor = vec4(color, texture(InSampler, texCoord).a);
+    // Debug 1: unmodified image copy, 3: reconstructed normals, 4: distance bands
+    if (ShadowInfo.y == 1) {
+        fragColor = texture(InSampler, texCoord);
+    } else if (ShadowInfo.y == 3) {
+        fragColor = vec4(normal * 0.5 + 0.5, 1.0);
+    } else if (ShadowInfo.y == 5) {
+        // Tone mapping alone, on the untouched image
+        vec3 c = aces(texture(InSampler, texCoord).rgb * 1.15);
+        fragColor = vec4(max(mix(vec3(luminance(c)), c, 1.12), 0.0), 1.0);
+    } else if (ShadowInfo.y == 6) {
+        // Marks invalid values (NaN / infinity) in magenta
+        bool bad = any(isnan(color)) || any(isinf(color));
+        fragColor = bad ? vec4(1.0, 0.0, 1.0, 1.0) : vec4(color, 1.0);
+    } else if (ShadowInfo.y == 9) {
+        // Which branches run: red shadows, green point lights, blue colored light, white fog/shafts/bloom
+        fragColor = vec4(float(ShadowInfo.x == 1), float(PointLightInfo.x > 0.5), float(ColoredVolume.w > 0.5), 1.0)
+            + vec4(float(Toggles.x + Toggles.y + Toggles.z > 0) * 0.5);
+    } else if (ShadowInfo.y == 4) {
+        fragColor = vec4(vec3(fract(dist / 16.0)), 1.0);
+    }
 }

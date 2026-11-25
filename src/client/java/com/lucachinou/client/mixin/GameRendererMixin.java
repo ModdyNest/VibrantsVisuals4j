@@ -35,7 +35,7 @@ public abstract class GameRendererMixin {
 	/** Runs after the world is drawn but before the hand and screen effects, so they stay untouched. */
 	@Inject(
 		method = "renderLevel",
-		at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;render(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;ZLnet/minecraft/client/renderer/state/level/CameraRenderState;Lcom/mojang/renderpearl/api/buffers/GpuBufferSlice;Lorg/joml/Vector4f;ZZ)V", shift = At.Shift.AFTER)
+		at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;render(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;ZLnet/minecraft/client/renderer/state/level/CameraRenderState;Lcom/mojang/renderpearl/api/buffers/GpuBufferSlice;Z)V", shift = At.Shift.AFTER)
 	)
 	private void vibrantsVisuals$applyEffects(final CallbackInfo ci) {
 		VibrantsVisualsRenderer.render(this.gameRenderState, this.mainRenderTarget());

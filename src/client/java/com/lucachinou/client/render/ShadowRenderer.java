@@ -2,7 +2,6 @@ package com.lucachinou.client.render;
 
 import com.lucachinou.VibrantsVisuals;
 import com.lucachinou.client.VibrantsVisualsOptions;
-import com.lucachinou.client.mixin.ChunkSectionsToRenderInvoker;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.renderpearl.api.GpuFormat;
@@ -11,7 +10,7 @@ import com.mojang.renderpearl.api.commands.RenderPass;
 import com.mojang.renderpearl.api.commands.RenderPassDescriptor;
 import com.mojang.renderpearl.api.pipeline.CompareOp;
 import com.mojang.renderpearl.api.pipeline.DepthStencilState;
-import com.mojang.renderpearl.api.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.renderpearl.api.textures.FilterMode;
 import com.mojang.renderpearl.api.textures.GpuTextureView;
 import com.lucachinou.client.mixin.PreparedFrameAccessor;
@@ -20,6 +19,7 @@ import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import com.mojang.renderpearl.api.pipeline.BindGroupLayout;
 import com.mojang.renderpearl.api.pipeline.UniformType;
+import com.mojang.renderpearl.api.pipeline.RenderPassLayout;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.Identifier;
@@ -33,7 +33,9 @@ import java.util.OptionalDouble;
 import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ProjectionMatrixBuffer;
-import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.RenderPassLayouts;
+import net.minecraft.client.renderer.pipeline.RenderPipelines;
+import com.mojang.renderpearl.api.pipeline.PrimitiveTopology;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayerGroup;
 import net.minecraft.client.renderer.chunk.ChunkSectionsToRender;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
@@ -59,14 +61,24 @@ public final class ShadowRenderer {
 	public static final float RADIUS = 96.0F;
 	public static final float DEPTH_RANGE = 256.0F;
 
-	private static final RenderPipeline PIPELINE = shadowPipeline(RenderPipelines.TERRAIN_SNIPPET, "pipeline/shadow_terrain");
-	private static final RenderPipeline PIPELINE_MULTIDRAW = shadowPipeline(RenderPipelines.MULTIDRAW_TERRAIN_SNIPPET, "pipeline/shadow_terrain_multidraw");
+	private static final RenderPipeline PIPELINE = shadowPipeline(false, "pipeline/shadow_terrain");
+	private static final RenderPipeline PIPELINE_MULTIDRAW = shadowPipeline(true, "pipeline/shadow_terrain_multidraw");
 
 	// Reversed depth: a negative bias pushes the stored depth away from the light, which removes acne on thin geometry
 	private static final float SLOPE_BIAS = -2.0F;
 	private static final float CONSTANT_BIAS = -4.0F;
 
-	private static final RenderPipeline ENTITY_PIPELINE = RenderPipeline.builder(RenderPipelines.ENTITY_SNIPPET)
+	private static final RenderPipeline ENTITY_PIPELINE = RenderPipeline.builder(RenderPipelines.GLOBALS_SNIPPET)
+		.withBindGroupLayout(BindGroupLayouts.PROJECTION)
+		.withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
+		.withBindGroupLayout(BindGroupLayouts.FOG)
+		.withBindGroupLayout(BindGroupLayouts.LIGHTING)
+		.withBindGroupLayout(BindGroupLayouts.SAMPLER0)
+		.withBindGroupLayout(BindGroupLayouts.SAMPLER2)
+		.withVertexShader("core/entity")
+		.withFragmentShader("core/entity")
+		.withVertexBinding(0, DefaultVertexFormat.ENTITY)
+		.withPrimitiveTopology(PrimitiveTopology.QUADS)
 		.withLocation(VibrantsVisuals.id("pipeline/shadow_entity"))
 		.withShaderDefine("ALPHA_CUTOUT", 0.5F)
 		.withBindGroupLayout(BindGroupLayouts.SAMPLER1)
@@ -75,8 +87,8 @@ public final class ShadowRenderer {
 		.withCull(false)
 		.build();
 
-	private static final RenderPipeline TRANSLUCENT_PIPELINE = translucentShadowPipeline(RenderPipelines.TERRAIN_SNIPPET, "pipeline/shadow_translucent_terrain");
-	private static final RenderPipeline TRANSLUCENT_PIPELINE_MULTIDRAW = translucentShadowPipeline(RenderPipelines.MULTIDRAW_TERRAIN_SNIPPET, "pipeline/shadow_translucent_terrain_multidraw");
+	private static final RenderPipeline TRANSLUCENT_PIPELINE = translucentShadowPipeline(false, "pipeline/shadow_translucent_terrain");
+	private static final RenderPipeline TRANSLUCENT_PIPELINE_MULTIDRAW = translucentShadowPipeline(true, "pipeline/shadow_translucent_terrain_multidraw");
 	/** Must match the CasterRects array size in core/shadow.fsh. */
 	private static final Identifier[] CASTER_TEXTURES = casterTextures();
 
@@ -111,21 +123,21 @@ public final class ShadowRenderer {
 	private ShadowRenderer() {
 	}
 
-	private static RenderPipeline shadowPipeline(final RenderPipeline.Snippet snippet, final String location) {
-		return shadowPipelineBuilder(snippet, location).build();
+	private static RenderPipeline shadowPipeline(final boolean multiDraw, final String location) {
+		return shadowPipelineBuilder(multiDraw, location).build();
 	}
 
 	/** Translucent terrain only casts shadows for the blocks listed in {@link #CASTER_TEXTURES}, water and glass stay see-through. */
-	private static RenderPipeline translucentShadowPipeline(final RenderPipeline.Snippet snippet, final String location) {
-		return shadowPipelineBuilder(snippet, location)
+	private static RenderPipeline translucentShadowPipeline(final boolean multiDraw, final String location) {
+		return shadowPipelineBuilder(multiDraw, location)
 			.withShaderDefine("TRANSLUCENT_CASTERS")
 			.withBindGroupLayout(BindGroupLayout.builder().withUniform("VibrantsShadowCasters", UniformType.UNIFORM_BUFFER).build())
 			.withColorTargetState(ColorTargetState.DEFAULT)
 			.build();
 	}
 
-	private static RenderPipeline.Builder shadowPipelineBuilder(final RenderPipeline.Snippet snippet, final String location) {
-		return RenderPipeline.builder(snippet)
+	private static RenderPipeline.Builder shadowPipelineBuilder(final boolean multiDraw, final String location) {
+		return TerrainPipelineOverride.terrainBuilder(multiDraw)
 			.withLocation(VibrantsVisuals.id(location))
 			.withFragmentShader(VibrantsVisuals.id("core/shadow"))
 			.withDepthStencilState(new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, true, SLOPE_BIAS, CONSTANT_BIAS))
@@ -195,9 +207,11 @@ public final class ShadowRenderer {
 		}
 
 		try {
-			if (RenderSystem.getCompiledPipelineNullable(PIPELINE) == null || RenderSystem.getCompiledPipelineNullable(PIPELINE_MULTIDRAW) == null
-				|| RenderSystem.getCompiledPipelineNullable(TRANSLUCENT_PIPELINE) == null
-				|| RenderSystem.getCompiledPipelineNullable(TRANSLUCENT_PIPELINE_MULTIDRAW) == null) {
+			RenderPassLayout.Subpass depthOnly = RenderPassLayouts.DEPTH_ONLY.subpass(0);
+			RenderPassLayout.Subpass colorDepth = RenderPassLayouts.COLOR_DEPTH.subpass(0);
+			if (RenderSystem.getCompiledPipelineNullable(PIPELINE, depthOnly) == null || RenderSystem.getCompiledPipelineNullable(PIPELINE_MULTIDRAW, depthOnly) == null
+				|| RenderSystem.getCompiledPipelineNullable(TRANSLUCENT_PIPELINE, colorDepth) == null
+				|| RenderSystem.getCompiledPipelineNullable(TRANSLUCENT_PIPELINE_MULTIDRAW, colorDepth) == null) {
 				throw new IllegalStateException("pipeline compilation failed");
 			}
 		} catch (RuntimeException e) {
@@ -217,10 +231,10 @@ public final class ShadowRenderer {
 		Matrix4f terrainProjection = new Matrix4f(SHADOW_MATRIX).mul(new Matrix4f(camera.viewRotationMatrix).invert());
 
 		GpuTextureView depthView = shadowTarget.getDepthTextureView();
-		RenderPassDescriptor descriptor = RenderPassDescriptor.builder(() -> "Vibrants Visuals shadows")
-			.withDepthAttachment(depthView, OptionalDouble.of(0.0))
-			.build();
-		GpuTextureView blockAtlas = minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).getTextureView();
+		RenderPassDescriptor.Builder descriptorBuilder = RenderPassDescriptor.builder(() -> "Vibrants Visuals shadows", RenderPassLayouts.DEPTH_ONLY);
+		descriptorBuilder.withAttachment(depthView, 0.0F);
+		RenderPassDescriptor descriptor = descriptorBuilder.build();
+		GpuTextureView blockAtlas = minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).textureView();
 		// Must be written before the render pass is opened, buffer uploads are not allowed during a pass
 		GpuBufferSlice projection = projectionBuffer.getBuffer(terrainProjection);
 		GpuBufferSlice casters = writeCasters(minecraft);
@@ -229,12 +243,11 @@ public final class ShadowRenderer {
 			RenderSystem.bindDefaultUniforms(pass);
 			pass.setUniform("Fog", terrainFog);
 			pass.setUniform("Projection", projection);
-			((ChunkSectionsToRenderInvoker) sections).vibrantsVisuals$renderLayers(
+			TerrainPipelineOverride.renderLayers(
+				sections,
 				ChunkSectionLayerGroup.OPAQUE.layers(),
-				RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST),
 				pass,
 				blockAtlas,
-				minecraft.gameRenderer.lightmap(),
 				PIPELINE,
 				PIPELINE_MULTIDRAW
 			);
@@ -245,6 +258,7 @@ public final class ShadowRenderer {
 				.createCommandEncoder()
 				.createRenderPass(
 					() -> "Vibrants Visuals shadow tint",
+					RenderPassLayouts.COLOR_DEPTH,
 					tintTarget.getColorTextureView(),
 					Optional.of(new Vector4f(1.0F, 1.0F, 1.0F, 1.0F)),
 					tintTarget.getDepthTextureView(),
@@ -254,12 +268,11 @@ public final class ShadowRenderer {
 			pass.setUniform("Fog", terrainFog);
 			pass.setUniform("Projection", projection);
 			pass.setUniform("VibrantsShadowCasters", casters);
-			((ChunkSectionsToRenderInvoker) sections).vibrantsVisuals$renderLayers(
+			TerrainPipelineOverride.renderLayers(
+				sections,
 				new ChunkSectionLayer[]{ChunkSectionLayer.TRANSLUCENT},
-				RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST),
 				pass,
 				blockAtlas,
-				minecraft.gameRenderer.lightmap(),
 				TRANSLUCENT_PIPELINE,
 				TRANSLUCENT_PIPELINE_MULTIDRAW
 			);
@@ -298,7 +311,7 @@ public final class ShadowRenderer {
 		RenderSystem.setProjectionMatrix(projection, ProjectionType.ORTHOGRAPHIC);
 		try (RenderPass pass = RenderSystem.getDevice()
 				.createCommandEncoder()
-				.createRenderPass(() -> "Vibrants Visuals entity shadows", target.getColorTextureView(), Optional.empty(), target.getDepthTextureView(), OptionalDouble.empty())) {
+				.createRenderPass(() -> "Vibrants Visuals entity shadows", RenderPassLayouts.COLOR_DEPTH, target.getColorTextureView(), Optional.empty(), target.getDepthTextureView(), OptionalDouble.empty())) {
 			RenderSystem.bindDefaultUniforms(pass);
 			renderingShadowMap = true;
 			featureFrame.executeSolid(pass);

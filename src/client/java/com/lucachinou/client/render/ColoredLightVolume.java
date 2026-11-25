@@ -3,7 +3,13 @@ package com.lucachinou.client.render;
 import com.lucachinou.client.VibrantsVisualsOptions;
 import java.util.ArrayDeque;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.texture.DynamicTexture;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.renderpearl.api.GpuFormat;
+import com.mojang.renderpearl.api.device.GpuDevice;
+import com.mojang.renderpearl.api.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
+import java.nio.ByteBuffer;
+import org.lwjgl.system.MemoryUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -22,7 +28,8 @@ public final class ColoredLightVolume {
 	public static final int SIZE = 32;
 	private static final Direction[] DIRECTIONS = Direction.values();
 
-	private static @Nullable DynamicTexture texture;
+	private static @Nullable GpuTexture texture;
+	private static @Nullable GpuTextureView textureView;
 	private static final int[] LEVELS = new int[SIZE * SIZE * SIZE * 3];
 	private static long lastUpdate = Long.MIN_VALUE;
 	private static BlockPos origin = BlockPos.ZERO;
@@ -30,8 +37,8 @@ public final class ColoredLightVolume {
 	private ColoredLightVolume() {
 	}
 
-	public static @Nullable DynamicTexture texture() {
-		return texture;
+	public static @Nullable GpuTextureView texture() {
+		return textureView;
 	}
 
 	/** Returns the volume corner relative to the camera in xyz, and 1 in w when enabled. */
@@ -69,9 +76,11 @@ public final class ColoredLightVolume {
 					if (emission > 0) {
 						Vector3f color = DynamicLights.colorOf(BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath());
 						int i = index(x, y, z);
-						LEVELS[i] = Math.round(emission * color.x);
-						LEVELS[i + 1] = Math.round(emission * color.y);
-						LEVELS[i + 2] = Math.round(emission * color.z);
+						// 16 steps per light level: integer rounding no longer creates hue bands far from the source
+						float max = Math.max(color.x, Math.max(color.y, color.z));
+						LEVELS[i] = Math.round(emission * 16 * color.x / max);
+						LEVELS[i + 1] = Math.round(emission * 16 * color.y / max);
+						LEVELS[i + 2] = Math.round(emission * 16 * color.z / max);
 						queue.add(new int[]{x, y, z});
 					}
 				}
@@ -95,14 +104,20 @@ public final class ColoredLightVolume {
 				}
 				float r = 1.0F, g = 1.0F, b = 1.0F;
 				if (state.getBlock() instanceof BeaconBeamBlock beam) {
-					int rgb = beam.getColor().getTextureDiffuseColor();
+					int rgb = beam.getColor();
 					r = ((rgb >> 16) & 255) / 255.0F;
 					g = ((rgb >> 8) & 255) / 255.0F;
 					b = (rgb & 255) / 255.0F;
 				}
-				int nr = (int) ((LEVELS[from] - 1) * r);
-				int ng = (int) ((LEVELS[from + 1] - 1) * g);
-				int nb = (int) ((LEVELS[from + 2] - 1) * b);
+				// Attenuate all channels by the same ratio so the hue is kept while the light fades
+				int level = Math.max(LEVELS[from], Math.max(LEVELS[from + 1], LEVELS[from + 2]));
+				if (level <= 16) {
+					continue;
+				}
+				float fade = (level - 16) / (float) level;
+				int nr = (int) (LEVELS[from] * fade * r);
+				int ng = (int) (LEVELS[from + 1] * fade * g);
+				int nb = (int) (LEVELS[from + 2] * fade * b);
 				if (nr > LEVELS[to] || ng > LEVELS[to + 1] || nb > LEVELS[to + 2]) {
 					LEVELS[to] = Math.max(LEVELS[to], nr);
 					LEVELS[to + 1] = Math.max(LEVELS[to + 1], ng);
@@ -115,19 +130,28 @@ public final class ColoredLightVolume {
 
 	private static void upload() {
 		if (texture == null) {
-			texture = new DynamicTexture(() -> "Vibrants Visuals colored light", SIZE * SIZE, SIZE, true);
+			GpuDevice device = RenderSystem.getDevice();
+			texture = device.createTexture(
+				"Vibrants Visuals colored light", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING, GpuFormat.RGBA8_UNORM, SIZE * SIZE, SIZE, 1, 1
+			);
+			textureView = device.createTextureView(texture);
 		}
+		ByteBuffer pixels = MemoryUtil.memAlloc(SIZE * SIZE * SIZE * 4);
 		for (int y = 0; y < SIZE; y++) {
 			for (int z = 0; z < SIZE; z++) {
 				for (int x = 0; x < SIZE; x++) {
 					int i = index(x, y, z);
-					int r = Math.max(LEVELS[i], 0) * 17;
-					int g = Math.max(LEVELS[i + 1], 0) * 17;
-					int b = Math.max(LEVELS[i + 2], 0) * 17;
-					texture.getPixels().setPixelABGR(x + y * SIZE, z, 0xFF000000 | b << 16 | g << 8 | r);
+					int r = Math.min(Math.max(LEVELS[i], 0), 255);
+					int g = Math.min(Math.max(LEVELS[i + 1], 0), 255);
+					int b = Math.min(Math.max(LEVELS[i + 2], 0), 255);
+					pixels.putInt(((z * SIZE * SIZE) + x + y * SIZE) * 4, 0xFF000000 | b << 16 | g << 8 | r);
 				}
 			}
 		}
-		texture.upload();
+		try {
+			RenderSystem.getDevice().createCommandEncoder().writeToTexture(texture, pixels, 0, 0, 0, 0, SIZE * SIZE, SIZE);
+		} finally {
+			MemoryUtil.memFree(pixels);
+		}
 	}
 }
